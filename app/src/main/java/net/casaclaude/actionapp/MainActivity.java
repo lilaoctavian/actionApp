@@ -16,6 +16,7 @@ import android.support.v7.app.AppCompatActivity;
 import android.telephony.CellInfo;
 import android.telephony.SmsManager;
 import android.telephony.TelephonyManager;
+import android.telephony.gsm.GsmCellLocation;
 import android.util.Log;
 import android.widget.TextView;
 
@@ -27,8 +28,10 @@ import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.List;
-
+import java.util.Timer;
+import java.util.TimerTask;
 
 
 public class MainActivity extends AppCompatActivity {
@@ -125,10 +128,60 @@ public class MainActivity extends AppCompatActivity {
 
 
     //Function implement the list of cell
-    private List<CellInfo> getCellIdentity() {
+    private String getCellIdentity() {
         final TelephonyManager telephonyManager=(TelephonyManager)getSystemService(Context.TELEPHONY_SERVICE);
         List<CellInfo> cellInfoList = telephonyManager.getAllCellInfo();
-        return cellInfoList;
+        GsmCellLocation cellLocation = (GsmCellLocation)telephonyManager.getCellLocation();
+        String getCellId = "NO NETWORK/NOT REGISTERED";
+
+        if (cellInfoList != null) {
+            for (CellInfo cellInfo : cellInfoList)
+            {
+                if (cellInfo.isRegistered())
+                {
+                    getCellId = cellInfo.toString();
+                }
+            }
+        }
+        else if (cellLocation != null) {
+            getCellId = "CellLocation:{mCid=" + cellLocation.getCid() + " mLac=" + cellLocation.getLac() + " mPsc=" + cellLocation.getPsc() + "}";
+        }
+        return getCellId;
+    }
+
+    private ArrayList<ArrayList<String>> getAllCellIdentity() {
+
+        final TelephonyManager telephonyManager=(TelephonyManager)getSystemService(Context.TELEPHONY_SERVICE);
+        List<CellInfo> cellInfoList = telephonyManager.getAllCellInfo();
+        GsmCellLocation cellLocation = (GsmCellLocation)telephonyManager.getCellLocation();
+
+        String getCellIdentity = "NO NETWORK/NOT REGISTERED";
+        ArrayList<ArrayList<String>> allCellInfoList = new ArrayList<ArrayList<String>>();
+        ArrayList<String> allCellInfoListTmp = new ArrayList<String>();
+
+        if (cellInfoList != null) {
+            for (CellInfo cellInfo : cellInfoList) {
+                allCellInfoListTmp = new ArrayList<String>();
+                if (cellInfo.isRegistered())
+                {
+                    getCellIdentity = cellInfo.toString();
+                    allCellInfoListTmp.add("REGISTERED:");
+                    allCellInfoListTmp.add(getCellIdentity);
+                } else {
+                    getCellIdentity = cellInfo.toString();
+                    allCellInfoListTmp.add("NOT REGISTERED:");
+                    allCellInfoListTmp.add(getCellIdentity);
+                }
+                allCellInfoList.add(allCellInfoListTmp);
+            }
+        }
+        else if (cellLocation != null) {
+            getCellIdentity = "CellLocation:{mCid=" + cellLocation.getCid() + " mLac=" + cellLocation.getLac() + " mPsc=" + cellLocation.getPsc() + "}";
+            allCellInfoListTmp.add("LOCATION:");
+            allCellInfoListTmp.add(getCellIdentity);
+            allCellInfoList.add(allCellInfoListTmp);
+        }
+        return allCellInfoList;
     }
 
     private void sendCall(String args) {
@@ -177,7 +230,9 @@ public class MainActivity extends AppCompatActivity {
         try {
             cursor.moveToFirst();
             System.out.println("Cursor Object dump is: "+DatabaseUtils.dumpCursorToString(cursor));
-            msgData += " " + cursor.getColumnName(0) + ":" + cursor.getString(0);
+            msgData += " " + cursor.getColumnName(2) + ":" + cursor.getString(2) + "\n" +
+                    cursor.getColumnCount() + "\n" +
+                    " " + cursor.getColumnName(8) + ":" + cursor.getString(12);
             cursor.close();
             return msgData;
         }
@@ -231,131 +286,120 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         final TextView tv=(TextView)findViewById(R.id.myText);
-        //final TelephonyManager telephonyManager=(TelephonyManager)getSystemService(Context.TELEPHONY_SERVICE);
+        //Remove input.txt file
+        //if (isFileExists("input.txt")) { removeFile("input.txt"); }
+        //Test with some input data
+        //writeToInputFile("readSms:0765704753");
+        //Read input.txt file for actionName and actionArgs
+        String[] inputData = readInput();
+        String actionName = inputData[0].trim();
+        String actionArgs = inputData[1].trim();
 
-        //new Timer().schedule(new TimerTask() {
-        //    @Override
-        //    public void run() {
-        //        runOnUiThread(new Runnable() {
-        //            @Override
-        //            public void run() {
-                        //Remove input.txt file
-                        if (isFileExists("input.txt")) { removeFile("input.txt"); }
-                        //Test with some input data
-                        writeToInputFile("getAllCellIdentity:null");
-                        //Read input.txt file for actionName and actionArgs
-                        String[] inputData = readInput();
-                        String actionName = inputData[0];
-                        String actionArgs = inputData[1];
+        switch (actionName) {
+            case "ftpDownload":
+                System.out.println("ftpDownload action");
+                break;
 
-                        switch (actionName) {
-                            case "ftpDownload":
-                                System.out.println("ftpDownload action");
-                                break;
-
-                            case ("getCellIdentity"):
-
-                                List<CellInfo> cellInfoList = getCellIdentity();
-                                String getCellIdentity;
-                                for (CellInfo cellInfo : cellInfoList) {
-                                    if (cellInfo.isRegistered()) {
-                                        getCellIdentity = cellInfo.toString();
-                                    } else {
-                                        getCellIdentity = "NOT REGISTERED";
-                                    }
-                                    //writeToFile(getCellIdentity);
-                                    tv.setText(getCellIdentity);
+            case ("getCellIdentity"):
+                new Timer().schedule(new TimerTask() {
+                    @Override
+                    public void run() {
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                String cellInfo = getCellIdentity();
+                                writeToFile(cellInfo);
+                                if (tv != null) {
+                                    tv.setText(cellInfo);
                                 }
-                                break;
-
-                            case ("getAllCellIdentity"):
-                                cellInfoList = getCellIdentity();
-                                for (CellInfo cellInfo : cellInfoList) {
-                                    if (cellInfo.isRegistered()) {
-                                        getCellIdentity = cellInfo.toString();
-                                    } else {
-                                        getCellIdentity = "NOT REGISTERED" + cellInfo.toString();
-                                    }
-                                    writeToFile(getCellIdentity);
-                                    tv.setText(getCellIdentity);
-                                }
-                                writeToFile(cellInfoList.toString());
-                                tv.setText(cellInfoList.toString());
-                                listFileContent();
-                                break;
-
-                            case ("ariplane"):
-                                //Needs os dev permission on the phone / TBD
-                                if (actionArgs.equals("on")) {
-                                    System.out.println("Switch on airplane mode");
-                                    tv.setText("Switch on airplane mode");
-                                    break;
-                                } else if (actionArgs.equals("off")){
-                                    System.out.println("Switch off airplane mode");
-                                    tv.setText("Switch off airplane mode");
-                                    break;
-                                }
-
-                            case ("wireless"):
-                                if (actionArgs.equals("on")) {
-                                    System.out.println("Switch on wireless connection");
-                                    wirelessMode(actionArgs);
-                                    tv.setText("Switch on wireless connection");
-                                    break;
-                                } else if (actionArgs.equals("off")) {
-                                    System.out.println("Switch off wireless connection");
-                                    wirelessMode(actionArgs);
-                                    tv.setText("Switch off wireless connection");
-                                    break;
-                                }
-
-                            case ("data"):
-                                if (actionArgs.equals("on")) {
-                                    System.out.println("Data is on");
-                                    mobileDataMode(true);
-                                    tv.setText("Data is on");
-                                    break;
-                                } else if (actionArgs.equals("off")) {
-                                    System.out.println("Data is off");
-                                    mobileDataMode(false);
-                                    tv.setText("Data is off");
-                                    break;
-                                }
-
-                            case ("sendSms"):
-                                String destSmsPhoneNumber = actionArgs;
-                                System.out.println("Send sms to phone_nr "+destSmsPhoneNumber);
-                                sendSms(destSmsPhoneNumber);
-                                tv.setText("Send sms to phone_nr "+ destSmsPhoneNumber);
-                                break;
-
-                            case ("readSms"):
-                                System.out.println("Read the last sms ");
-                                String dataSms = readSms();
-                                tv.setText(dataSms);
-                                break;
-
-                            case ("sendCall"):
-                                String destCallPhoneNumber = actionArgs;
-                                System.out.println("Send call to: " + destCallPhoneNumber);
-                                sendCall(destCallPhoneNumber);
-                                tv.setText("Send call to: " + destCallPhoneNumber);
-                                break;
-
-                            case ("receiveCall"):
-                                //Not available from version > 4
-                                //Call interception is not allowed
-                                System.out.println("Answer phone call");
-                                break;
-
-                            case ("endCall"):
-                                endCall();
-                                System.out.println("End active call");
-                                break;
-                        }
+                            }
+                        });
                     }
-               // });
-            }
-        //}, 0, 2000);
-//    }
-//}
+                }, 0, 2000);
+                break;
+
+            case ("getAllCellIdentity"):
+                ArrayList<ArrayList<String>> allCellInfoList = getAllCellIdentity();
+                String textDataAll = "";
+                String status = "";
+                String cellId = "";
+                String writeData = "";
+                for (ArrayList<String> cellInfoArray:allCellInfoList) {
+                    status = cellInfoArray.get(0);
+                    cellId = cellInfoArray.get(1);
+                    writeData = status + ":" + cellId + "\\n";
+                    textDataAll = textDataAll + writeData;
+                    writeToFile(writeData);
+                }
+                tv.setText(textDataAll);
+                break;
+
+            case ("ariplane"):
+                //Needs os dev permission on the phone / TBD
+                if (actionArgs.equals("on")) {
+                    System.out.println("Switch on airplane mode");
+                    tv.setText("Switch on airplane mode");
+                } else if (actionArgs.equals("off")){
+                    System.out.println("Switch off airplane mode");
+                    tv.setText("Switch off airplane mode");
+                }
+                break;
+
+            case ("wireless"):
+                if (actionArgs.equals("on")) {
+                    System.out.println("Switch on wireless connection");
+                    wirelessMode(actionArgs);
+                    tv.setText("Switch on wireless connection");
+                } else if (actionArgs.equals("off")) {
+                    System.out.println("Switch off wireless connection");
+                    wirelessMode(actionArgs);
+                    tv.setText("Switch off wireless connection");
+                }
+                break;
+
+            case ("data"):
+                if (actionArgs.equals("on")) {
+                    System.out.println("Data is on");
+                    mobileDataMode(true);
+                    tv.setText("Data is on");
+                } else if (actionArgs.equals("off")) {
+                    System.out.println("Data is off");
+                    mobileDataMode(false);
+                    tv.setText("Data is off");
+                }
+                break;
+
+            case ("sendSms"):
+                String destSmsPhoneNumber = actionArgs;
+                System.out.println("Send sms to phone_nr "+destSmsPhoneNumber);
+                sendSms(destSmsPhoneNumber);
+                tv.setText("Send sms to phone_nr "+ destSmsPhoneNumber);
+                break;
+
+            case ("readSms"):
+                System.out.println("Read the last sms ");
+                String dataSms = readSms();
+                tv.setText(dataSms);
+                break;
+
+            case ("sendCall"):
+                String destCallPhoneNumber = actionArgs;
+                System.out.println("Send call to: " + destCallPhoneNumber);
+                sendCall(destCallPhoneNumber);
+                tv.setText("Send call to: " + destCallPhoneNumber);
+                break;
+
+            case ("receiveCall"):
+                //Not available from version > 4
+                //Call interception is not allowed
+                System.out.println("Answer phone call");
+                break;
+
+            case ("endCall"):
+                endCall();
+                System.out.println("End active call");
+                break;
+        }
+    }
+
+}
