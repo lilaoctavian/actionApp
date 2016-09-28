@@ -1,6 +1,7 @@
 package net.casaclaude.actionapp;
 
 import android.Manifest;
+import android.app.DownloadManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -184,6 +185,80 @@ public class MainActivity extends AppCompatActivity {
         return allCellInfoList;
     }
 
+    private void goToUrl (String url) {
+        if (!url.startsWith("https://") && !url.startsWith("http://")){
+            url = "http://" + url;
+        }
+        Intent webOpen = new Intent(android.content.Intent.ACTION_VIEW);
+        webOpen.setData(Uri.parse(url));
+        startActivity(webOpen);
+    }
+
+    private void getFtp(String args) {
+        String [] inputData = args.split(";");
+        String url = inputData[0];
+        if (!url.startsWith("https://") && !url.startsWith("http://")){
+            url = "http://" + url;
+        }
+        long totalDownloadedBytesStop = Long.parseLong(inputData[1]);
+        final DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+
+        request.setDescription("ftp download @ " + url);
+        request.setTitle("download");
+        request.setDestinationInExternalPublicDir(Environment.getExternalStorageDirectory().getAbsolutePath(), "download-trash.dat");
+
+        // get download service and enqueue file
+        final DownloadManager downloadManager = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+
+        int currentStatus = DownloadManager.STATUS_PAUSED;
+        long downloadedBytes = 0;
+        long totalDownloadedBytes = 0;
+        long startingTime = System.currentTimeMillis();
+        long downloadId = downloadManager.enqueue(request);
+        long downloadSpeed;
+        long timeElapsed;
+
+        while (currentStatus != DownloadManager.STATUS_FAILED) {
+            DownloadManager.Query q = new DownloadManager.Query();
+            q.setFilterById(downloadId);
+
+            Cursor cursor = downloadManager.query(q);
+            cursor.moveToFirst();
+
+            if (downloadedBytes != cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)) &&
+                    downloadedBytes < cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)) && (totalDownloadedBytes > totalDownloadedBytesStop)) {
+                timeElapsed = System.currentTimeMillis() - startingTime + 1;
+                totalDownloadedBytes = totalDownloadedBytes + cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)) - downloadedBytes;
+                downloadSpeed = totalDownloadedBytes / timeElapsed * 1000;
+
+                downloadedBytes = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR));
+
+                final String downloadData = "{\"downloadedSoFar\": \""
+                        + downloadedBytes + "\", \"downloadSpeed\": \""
+                        + downloadSpeed + "\", \"totalDownloadedSoFar\": \""
+                        + totalDownloadedBytes + "\", \"timeElapsed\" : \""
+                        + timeElapsed + "\"}";
+
+                writeToFile(downloadData);
+            } else if (totalDownloadedBytes < totalDownloadedBytesStop) {
+                final String downloadData = "{\"status\":\"DOWNLOAD SIZE REACHED\"}";
+                writeToFile(downloadData);
+            }
+            currentStatus = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS));
+
+            if (currentStatus == DownloadManager.STATUS_SUCCESSFUL) {
+                removeFile("download.*\\.dat");
+                downloadId = downloadManager.enqueue(request);
+                downloadedBytes = 0;
+            }
+            else if (currentStatus == DownloadManager.STATUS_PAUSED) {
+                final String downloadData = "{\"status\":\"PAUSED\"}";
+                writeToFile(downloadData);
+            }
+            cursor.close();
+        }
+    }
+
     private void sendCall(String args) {
         String num = args;
         String number = "tel:" + num.toString().trim();
@@ -287,9 +362,9 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         final TextView tv=(TextView)findViewById(R.id.myText);
         //Remove input.txt file
-        //if (isFileExists("input.txt")) { removeFile("input.txt"); }
+        if (isFileExists("input.txt")) { removeFile("input.txt"); }
         //Test with some input data
-        //writeToInputFile("readSms:0765704753");
+        writeToInputFile("ftpDownload:speedtest.wdc01.softlayer.com/downloads/test500.zip;100000000");
         //Read input.txt file for actionName and actionArgs
         String[] inputData = readInput();
         String actionName = inputData[0].trim();
@@ -298,6 +373,8 @@ public class MainActivity extends AppCompatActivity {
         switch (actionName) {
             case "ftpDownload":
                 System.out.println("ftpDownload action");
+                getFtp(actionArgs);
+                tv.setText("Starting FTP transfer.");
                 break;
 
             case ("getCellIdentity"):
@@ -345,15 +422,25 @@ public class MainActivity extends AppCompatActivity {
                 }
                 break;
 
+            case ("openUrl"):
+                //Needs os dev permission on the phone / TBD
+                String url = actionArgs;
+                goToUrl(url);
+                break;
+
             case ("wireless"):
                 if (actionArgs.equals("on")) {
                     System.out.println("Switch on wireless connection");
                     wirelessMode(actionArgs);
                     tv.setText("Switch on wireless connection");
+                    writeData = "Switch on wireless connection";
+                    writeToFile(writeData);
                 } else if (actionArgs.equals("off")) {
                     System.out.println("Switch off wireless connection");
                     wirelessMode(actionArgs);
                     tv.setText("Switch off wireless connection");
+                    writeData = "Switch off wireless connection";
+                    writeToFile(writeData);
                 }
                 break;
 
@@ -362,10 +449,14 @@ public class MainActivity extends AppCompatActivity {
                     System.out.println("Data is on");
                     mobileDataMode(true);
                     tv.setText("Data is on");
+                    writeData = "Data is on";
+                    writeToFile(writeData);
                 } else if (actionArgs.equals("off")) {
                     System.out.println("Data is off");
                     mobileDataMode(false);
                     tv.setText("Data is off");
+                    writeData = "Data is off";
+                    writeToFile(writeData);
                 }
                 break;
 
@@ -374,12 +465,15 @@ public class MainActivity extends AppCompatActivity {
                 System.out.println("Send sms to phone_nr "+destSmsPhoneNumber);
                 sendSms(destSmsPhoneNumber);
                 tv.setText("Send sms to phone_nr "+ destSmsPhoneNumber);
+                writeData = "Send sms to phone_nr "+ destSmsPhoneNumber;
+                writeToFile(writeData);
                 break;
 
             case ("readSms"):
                 System.out.println("Read the last sms ");
                 String dataSms = readSms();
                 tv.setText(dataSms);
+                writeToFile(dataSms);
                 break;
 
             case ("sendCall"):
@@ -387,6 +481,8 @@ public class MainActivity extends AppCompatActivity {
                 System.out.println("Send call to: " + destCallPhoneNumber);
                 sendCall(destCallPhoneNumber);
                 tv.setText("Send call to: " + destCallPhoneNumber);
+                writeData = "Send call to: " + destCallPhoneNumber;
+                writeToFile(writeData);
                 break;
 
             case ("receiveCall"):
@@ -398,6 +494,8 @@ public class MainActivity extends AppCompatActivity {
             case ("endCall"):
                 endCall();
                 System.out.println("End active call");
+                writeData = "End active call";
+                writeToFile(writeData);
                 break;
         }
     }
