@@ -29,10 +29,13 @@ import java.io.IOException;
 import java.io.OutputStreamWriter;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.net.HttpURLConnection;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
+
 
 
 public class MainActivity extends AppCompatActivity {
@@ -62,6 +65,22 @@ public class MainActivity extends AppCompatActivity {
             File myFile = new File(sdcard,"output.txt");
             myFile.createNewFile();
             FileOutputStream fileOutputStream = new FileOutputStream(myFile);
+            OutputStreamWriter outputStreamWriter = new OutputStreamWriter(fileOutputStream);
+            outputStreamWriter.write(data);
+            outputStreamWriter.close();
+        }
+        catch (IOException e) {
+            Log.e("Exception", "File write failed: " + e.toString());
+        }
+    }
+
+    //Write output info to output.txt
+    private void appendToFile(String data) {
+        try {
+            File sdcard = Environment.getExternalStorageDirectory();
+            File myFile = new File(sdcard,"output.txt");
+            myFile.createNewFile();
+            FileOutputStream fileOutputStream = new FileOutputStream(myFile, true);
             OutputStreamWriter outputStreamWriter = new OutputStreamWriter(fileOutputStream);
             outputStreamWriter.write(data);
             outputStreamWriter.close();
@@ -186,6 +205,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void goToUrl (String url) {
+        final TextView tv=(TextView)findViewById(R.id.myText);
         if (!url.startsWith("https://") && !url.startsWith("http://")){
             url = "http://" + url;
         }
@@ -194,14 +214,76 @@ public class MainActivity extends AppCompatActivity {
         startActivity(webOpen);
     }
 
-    private void getFtp(String args) {
+    private String getDataActivity() {
+        String dataActivityName = "";
+        final TelephonyManager telephonyManager = (TelephonyManager)getSystemService(Context.TELEPHONY_SERVICE);
+        Integer dataState = telephonyManager.getDataActivity();
+        if (dataState == 0) {
+            dataActivityName = "DATA_ACTIVITY_NONE";
+        } else if (dataState == 1) {
+            dataActivityName = "DATA_ACTIVITY_IN";
+        } else if (dataState == 2) {
+            dataActivityName = "DATA_ACTIVITY_OUT";
+        } else if (dataState == 3) {
+            dataActivityName = "DATA_ACTIVITY_INOUT";
+        } else if (dataState == 4) {
+            dataActivityName = "DATA_ACTIVITY_DORMANT";
+        }
+        return dataActivityName;
+    }
+
+    private String getDataState() {
+        String dataStateName = "";
+        final TelephonyManager telephonyManager = (TelephonyManager)getSystemService(Context.TELEPHONY_SERVICE);
+        Integer dataState = telephonyManager.getDataState();
+        if (dataState == 0) {
+            dataStateName = "DATA_DISCONNECTED";
+        } else if (dataState == 1) {
+            dataStateName = "DATA_CONNECTING";
+        } else if (dataState == 2) {
+            dataStateName = "DATA_CONNECTED";
+        } else if (dataState == 3) {
+            dataStateName = "DATA_SUSPENDED";
+        }
+        return dataStateName;
+    }
+
+    public void putHttp(String args) throws Exception {
         String [] inputData = args.split(";");
         String url = inputData[0];
+        Long totalDownloadedBytesStop = Long.parseLong(inputData[1]);
         if (!url.startsWith("https://") && !url.startsWith("http://")){
             url = "http://" + url;
         }
-        long totalDownloadedBytesStop = Long.parseLong(inputData[1]);
+        URL urlConv = new URL(url);
+        HttpURLConnection urlConnection = null;
+        try {
+
+            urlConnection = (HttpURLConnection) urlConv.openConnection();
+        } catch (Exception e) {
+            System.out.println("ERROR CONNECTING TO URL");
+        }
+        finally {
+            if (urlConnection != null)
+            {
+                urlConnection.disconnect();
+            }
+        }
+
+    }
+
+    private void ftpDownload(String args, TextView tv) {
+
+        String [] inputData = args.split(";");
+        String url = inputData[0];
+        Long totalDownloadedBytesStop = Long.parseLong(inputData[1]);
+        totalDownloadedBytesStop = totalDownloadedBytesStop * 1024 * 1024;
+
+        if (!url.startsWith("https://") && !url.startsWith("http://")){
+            url = "http://" + url;
+        }
         final DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
+        final TextView tv1 = tv;
 
         request.setDescription("ftp download @ " + url);
         request.setTitle("download");
@@ -219,6 +301,8 @@ public class MainActivity extends AppCompatActivity {
         long timeElapsed;
 
         while (currentStatus != DownloadManager.STATUS_FAILED) {
+            String dataActivityName = getDataActivity();
+            String dataStateName = getDataState();
             DownloadManager.Query q = new DownloadManager.Query();
             q.setFilterById(downloadId);
 
@@ -226,7 +310,7 @@ public class MainActivity extends AppCompatActivity {
             cursor.moveToFirst();
 
             if (downloadedBytes != cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)) &&
-                    downloadedBytes < cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)) && (totalDownloadedBytes > totalDownloadedBytesStop)) {
+                    downloadedBytes < cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)) && (totalDownloadedBytes < totalDownloadedBytesStop) ) {
                 timeElapsed = System.currentTimeMillis() - startingTime + 1;
                 totalDownloadedBytes = totalDownloadedBytes + cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)) - downloadedBytes;
                 downloadSpeed = totalDownloadedBytes / timeElapsed * 1000;
@@ -240,12 +324,31 @@ public class MainActivity extends AppCompatActivity {
                         + timeElapsed + "\"}";
 
                 writeToFile(downloadData);
-            } else if (totalDownloadedBytes < totalDownloadedBytesStop) {
-                final String downloadData = "{\"status\":\"DOWNLOAD SIZE REACHED\"}";
-                writeToFile(downloadData);
-            }
-            currentStatus = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS));
 
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        tv1.setText(downloadData);;
+                    }
+                });
+                System.out.println("totalDownloadedBytes:"+totalDownloadedBytes + " " + totalDownloadedBytesStop);
+
+            } else if (totalDownloadedBytes > totalDownloadedBytesStop) {
+                final String downloadData = "{\"status\":\"DOWNLOAD FINISHED\"}";
+                removeFile("download.*\\.dat");
+                writeToFile(downloadData);
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        tv1.setText(downloadData);;
+                    }
+                });
+                downloadManager.remove(downloadId);
+                break;
+            }
+
+            currentStatus = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS));
+            //tv.setText("Dupa primul if"+url);
             if (currentStatus == DownloadManager.STATUS_SUCCESSFUL) {
                 removeFile("download.*\\.dat");
                 downloadId = downloadManager.enqueue(request);
@@ -254,8 +357,13 @@ public class MainActivity extends AppCompatActivity {
             else if (currentStatus == DownloadManager.STATUS_PAUSED) {
                 final String downloadData = "{\"status\":\"PAUSED\"}";
                 writeToFile(downloadData);
+                tv.setText(downloadData);
             }
             cursor.close();
+        }
+        if (currentStatus == DownloadManager.STATUS_FAILED) {
+            final String downloadData = "{\"status\":\"ERROR\"}";
+            tv.setText(downloadData);
         }
     }
 
@@ -268,6 +376,7 @@ public class MainActivity extends AppCompatActivity {
             startActivity(callIntent);
         }
     }
+
 
     private void endCall() {
         //iTelephony
@@ -358,23 +467,55 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        String[] inputData = readInput();
+        final String actionName = inputData[0].trim();
+        final String actionArgs = inputData[1].trim();
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         final TextView tv=(TextView)findViewById(R.id.myText);
+
         //Remove input.txt file
         if (isFileExists("input.txt")) { removeFile("input.txt"); }
         //Test with some input data
-        writeToInputFile("ftpDownload:speedtest.wdc01.softlayer.com/downloads/test500.zip;100000000");
+        //writeToInputFile("ftpDownload:www.google.com;10000");
+        //writeToInputFile("ftpDownload:cdimage.ubuntu.com/kubuntu/releases/12.04.4/release/kubuntu-12.04.5-alternate-i386.iso;1000");
+        writeToInputFile("ftpUpload:speedtest.tele2.net;anonymous;varza@yahoo.com");
+        //writeToInputFile("ftpUpload:test.talia.net;anonymous;varza@yahoo.com");
         //Read input.txt file for actionName and actionArgs
-        String[] inputData = readInput();
-        String actionName = inputData[0].trim();
-        String actionArgs = inputData[1].trim();
 
         switch (actionName) {
             case "ftpDownload":
                 System.out.println("ftpDownload action");
-                getFtp(actionArgs);
-                tv.setText("Starting FTP transfer.");
+                ftpDownload(actionArgs, tv);
+                break;
+
+            case "ftpUpload":
+                System.out.println("ftpUpload action");
+                //ftpUpload(actionArgs);
+                FtpClass myFtpClass = new FtpClass();
+                myFtpClass.setArgs(actionArgs);
+                myFtpClass.execute();
+                break;
+
+            case "dataDetails":
+                System.out.println("Data details action");
+                new Timer().schedule(new TimerTask() {
+                    @Override
+                    public void run() {
+                        runOnUiThread(new Runnable() {
+                            @Override
+                            public void run() {
+                                String dataState = getDataState();
+                                String dataActivity = getDataActivity();
+                                writeToFile(dataState + "\n");
+                                appendToFile(dataActivity + "\n");
+                                if (tv != null) {
+                                    tv.setText(dataState + "\t" + dataActivity);
+                                }
+                            }
+                        });
+                    }
+                }, 0, 2000);
                 break;
 
             case ("getCellIdentity"):
@@ -401,12 +542,12 @@ public class MainActivity extends AppCompatActivity {
                 String status = "";
                 String cellId = "";
                 String writeData = "";
+                writeToFile("BEGIN");
                 for (ArrayList<String> cellInfoArray:allCellInfoList) {
                     status = cellInfoArray.get(0);
                     cellId = cellInfoArray.get(1);
                     writeData = status + ":" + cellId + "\\n";
-                    textDataAll = textDataAll + writeData;
-                    writeToFile(writeData);
+                    appendToFile(writeData);
                 }
                 tv.setText(textDataAll);
                 break;
