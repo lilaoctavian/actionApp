@@ -38,6 +38,7 @@ import java.util.TimerTask;
 
 
 
+
 public class MainActivity extends AppCompatActivity {
 
 
@@ -59,7 +60,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     //Write output info to output.txt
-    private void writeToFile(String data) {
+    public static void writeToFile(String data) {
         try {
             File sdcard = Environment.getExternalStorageDirectory();
             File myFile = new File(sdcard,"output.txt");
@@ -104,7 +105,30 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private boolean isFileExists(String filename){
+    private String readUrl() {
+        File sdcard = Environment.getExternalStorageDirectory();
+        File file = new File(sdcard,"ftptransfer-url.txt");
+
+        StringBuilder text = new StringBuilder();
+
+        try {
+            BufferedReader br = new BufferedReader(new FileReader(file));
+            String line;
+
+            while ((line = br.readLine()) != null) {
+                text.append(line);
+                text.append('\n');
+            }
+            br.close();
+        }
+        catch (IOException e) {
+            Log.e("Exception", "File read failed: " + e.toString());
+        }
+
+        return text.toString();
+    }
+
+    public static boolean isFileExists(String filename){
         File folder1 = new File(Environment.getExternalStorageDirectory().getAbsolutePath() + filename);
         return folder1.exists();
     }
@@ -274,9 +298,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void ftpDownload(String args, TextView tv) {
 
-        String [] inputData = args.split(";");
-        String url = inputData[0];
-        Long totalDownloadedBytesStop = Long.parseLong(inputData[1]);
+        String url = readUrl();
+        Long totalDownloadedBytesStop = Long.parseLong(args);
         totalDownloadedBytesStop = totalDownloadedBytesStop * 1024 * 1024;
 
         if (!url.startsWith("https://") && !url.startsWith("http://")){
@@ -363,6 +386,7 @@ public class MainActivity extends AppCompatActivity {
         }
         if (currentStatus == DownloadManager.STATUS_FAILED) {
             final String downloadData = "{\"status\":\"ERROR\"}";
+            writeToFile(downloadData);
             tv.setText(downloadData);
         }
     }
@@ -467,6 +491,19 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        //Remove input.txt file
+        //if (isFileExists("input.txt")) { removeFile("input.txt"); }
+        //writeToInputFile("ftpUpload:url=speedtest.tele2.net;username=anonymous;password=varza@yahoo.com;fileSize=30;totalUpload=56;uploadPath=/upload");
+        //writeToInputFile("ftpUpload:url=speedtest.tele2.net;username=anonymous;password=albala@yahoo.com;fileSize=15;maxTotalUpload=10000;ftpUploadPath=/upload");
+        //Test with some input data
+        //writeToInputFile("ftpDownload:www.google.com;10000");
+        //writeToInputFile("ftpDownload:cdimage.ubuntu.com/kubuntu/releases/12.04.4/release/kubuntu-12.04.5-alternate-i386.iso;1000");
+
+        //writeToInputFile("ftpUpload:test.talia.net;anonymous;varza@yahoo.com");
+        //Read input.txt file for actionName and actionArgs
+
+
+        String fileName = "output.txt";
         String[] inputData = readInput();
         final String actionName = inputData[0].trim();
         final String actionArgs = inputData[1].trim();
@@ -474,14 +511,6 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         final TextView tv=(TextView)findViewById(R.id.myText);
 
-        //Remove input.txt file
-        if (isFileExists("input.txt")) { removeFile("input.txt"); }
-        //Test with some input data
-        //writeToInputFile("ftpDownload:www.google.com;10000");
-        //writeToInputFile("ftpDownload:cdimage.ubuntu.com/kubuntu/releases/12.04.4/release/kubuntu-12.04.5-alternate-i386.iso;1000");
-        writeToInputFile("ftpUpload:speedtest.tele2.net;anonymous;varza@yahoo.com");
-        //writeToInputFile("ftpUpload:test.talia.net;anonymous;varza@yahoo.com");
-        //Read input.txt file for actionName and actionArgs
 
         switch (actionName) {
             case "ftpDownload":
@@ -505,9 +534,11 @@ public class MainActivity extends AppCompatActivity {
                         runOnUiThread(new Runnable() {
                             @Override
                             public void run() {
+                                String fileName = "dataDetalis.txt";
                                 String dataState = getDataState();
+                                dataState = dataState + "\n";
                                 String dataActivity = getDataActivity();
-                                writeToFile(dataState + "\n");
+                                writeToFile(dataState);
                                 appendToFile(dataActivity + "\n");
                                 if (tv != null) {
                                     tv.setText(dataState + "\t" + dataActivity);
@@ -526,6 +557,7 @@ public class MainActivity extends AppCompatActivity {
                             @Override
                             public void run() {
                                 String cellInfo = getCellIdentity();
+                                String fileName = "getCellIdentity.txt";
                                 writeToFile(cellInfo);
                                 if (tv != null) {
                                     tv.setText(cellInfo);
@@ -537,6 +569,7 @@ public class MainActivity extends AppCompatActivity {
                 break;
 
             case ("getAllCellIdentity"):
+                fileName = "getAllCellIdentity";
                 ArrayList<ArrayList<String>> allCellInfoList = getAllCellIdentity();
                 String textDataAll = "";
                 String status = "";
